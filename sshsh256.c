@@ -4,7 +4,7 @@
  *   http://csrc.nist.gov/cryptval/shs.html
  */
 
-typedef unsigned int uint32;
+#include "ssh.h"
 
 /* ----------------------------------------------------------------------
  * Core SHA256 algorithm: processes 16-word blocks into a message digest.
@@ -19,11 +19,7 @@ typedef unsigned int uint32;
 #define smallsigma0(x) ( ror((x),7) ^ ror((x),18) ^ shr((x),3) )
 #define smallsigma1(x) ( ror((x),17) ^ ror((x),19) ^ shr((x),10) )
 
-typedef struct {
-    uint32 h[8];
-} SHA256_Core_State;
-
-void SHA256_Core_Init(SHA256_Core_State *s) {
+void SHA256_Core_Init(SHA256_State *s) {
     s->h[0] = 0x6a09e667;
     s->h[1] = 0xbb67ae85;
     s->h[2] = 0x3c6ef372;
@@ -34,7 +30,7 @@ void SHA256_Core_Init(SHA256_Core_State *s) {
     s->h[7] = 0x5be0cd19;
 }
 
-void SHA256_Block(SHA256_Core_State *s, uint32 *block) {
+void SHA256_Block(SHA256_State *s, uint32 *block) {
     uint32 w[80];
     uint32 a,b,c,d,e,f,g,h;
     static const int k[] = {
@@ -97,15 +93,8 @@ void SHA256_Block(SHA256_Core_State *s, uint32 *block) {
 
 #define BLKSIZE 64
 
-typedef struct {
-    SHA256_Core_State core;
-    unsigned char block[BLKSIZE];
-    int blkused;
-    uint32 lenhi, lenlo;
-} SHA256_State;
-
 void SHA256_Init(SHA256_State *s) {
-    SHA256_Core_Init(&s->core);
+    SHA256_Core_Init(s);
     s->blkused = 0;
     s->lenhi = s->lenlo = 0;
 }
@@ -144,7 +133,7 @@ void SHA256_Bytes(SHA256_State *s, const void *p, int len) {
                     ( ((uint32)s->block[i*4+2]) <<  8 ) |
                     ( ((uint32)s->block[i*4+3]) <<  0 );
             }
-            SHA256_Block(&s->core, wordblock);
+            SHA256_Block(s, wordblock);
             s->blkused = 0;
         }
         memcpy(s->block, q, len);
@@ -152,11 +141,10 @@ void SHA256_Bytes(SHA256_State *s, const void *p, int len) {
     }
 }
 
-void SHA256_Final(SHA256_State *s, void *output) {
+void SHA256_Final(SHA256_State *s, unsigned char *digest) {
     int i;
     int pad;
     unsigned char c[64];
-    unsigned char *digest = (unsigned char *)output;
     uint32 lenhi, lenlo;
 
     if (s->blkused >= 56)
@@ -183,10 +171,10 @@ void SHA256_Final(SHA256_State *s, void *output) {
     SHA256_Bytes(s, &c, 8);
 
     for (i = 0; i < 8; i++) {
-	digest[i*4+0] = (s->core.h[i] >> 24) & 0xFF;
-	digest[i*4+1] = (s->core.h[i] >> 16) & 0xFF;
-	digest[i*4+2] = (s->core.h[i] >>  8) & 0xFF;
-	digest[i*4+3] = (s->core.h[i] >>  0) & 0xFF;
+	digest[i*4+0] = (s->h[i] >> 24) & 0xFF;
+	digest[i*4+1] = (s->h[i] >> 16) & 0xFF;
+	digest[i*4+2] = (s->h[i] >>  8) & 0xFF;
+	digest[i*4+3] = (s->h[i] >>  0) & 0xFF;
     }
 }
 
@@ -197,6 +185,38 @@ void SHA256_Simple(const void *p, int len, unsigned char *output) {
     SHA256_Bytes(&s, p, len);
     SHA256_Final(&s, output);
 }
+
+/*
+ * Thin abstraction for things where hashes are pluggable.
+ */
+
+static void *sha256_init(void)
+{
+    SHA256_State *s;
+
+    s = snew(SHA256_State);
+    SHA256_Init(s);
+    return s;
+}
+
+static void sha256_bytes(void *handle, void *p, int len)
+{
+    SHA256_State *s = handle;
+
+    SHA256_Bytes(s, p, len);
+}
+
+static void sha256_final(void *handle, unsigned char *output)
+{
+    SHA256_State *s = handle;
+
+    SHA256_Final(s, output);
+    sfree(s);
+}
+
+const struct ssh_hash ssh_sha256 = {
+    sha256_init, sha256_bytes, sha256_final, 32, "SHA-256"
+};
 
 #ifdef TEST
 
