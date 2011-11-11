@@ -361,6 +361,7 @@ static void codepage_handler(union control *ctrl, void *dlg,
     } else if (event == EVENT_VALCHANGE) {
 	dlg_editbox_get(ctrl, dlg, cfg->line_codepage,
 			sizeof(cfg->line_codepage));
+	if (decode_codepage (cfg->line_codepage) != CP_UTF8 || iso2022_init_test (cfg->line_codepage))
 	strcpy(cfg->line_codepage,
 	       cp_name(decode_codepage(cfg->line_codepage)));
     }
